@@ -3,7 +3,10 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-enum Direction { up, down, left, right }
+import 'ctrl.dart';
+import 'peice.dart';
+
+// enum Direction { up, down, left, right }
 
 class GameBoard extends StatefulWidget {
   const GameBoard({super.key});
@@ -19,7 +22,11 @@ int getNearestTens(int num, int step) {
   return out;
 }
 
-class _GameBoardState extends State<GameBoard> {
+class _GameBoardState extends State<GameBoard> with TickerProviderStateMixin {
+  late final AnimationController footAnimationCtrl;
+  // final Tween<double> _tween = Tween(begin: 0.75, end: 1.25);
+  int points = 0;
+
   late final int upperBoundX, upperBoundY, lowerBoundX, lowerBoundY;
   late final double boardWidth, boardHeight;
   int step = 20;
@@ -34,7 +41,12 @@ class _GameBoardState extends State<GameBoard> {
 
   Offset? foodPosition;
   Peice? get food => foodPosition != null
-      ? Peice(size: step, position: foodPosition!, color: Colors.white)
+      ? Peice(
+          size: step,
+          position: foodPosition!,
+          color: Colors.white,
+          footAnimationCtrl: footAnimationCtrl,
+        )
       : null;
 
   Offset get randomPosition {
@@ -57,19 +69,36 @@ class _GameBoardState extends State<GameBoard> {
       snakePositions[i] = snakePositions[i - 1];
     }
     snakePositions[0] = getNextSnakePosition(snakePositions[0]);
+    try {
+      // check if snake eat him self then looos and restart
+      if (snakePositions
+          .sublist(1, snakePositions.length - 1)
+          .where((element) => element == snakePositions[0])
+          .isNotEmpty) {
+        print('loooos');
+        restart();
+      }
+    } catch (e) {}
   }
 
   void drawFood() {
-    // while(foodPosition==null || foodPosition)
+//
+//check that snake eat the food or not
+//increment points and speed of snake
     foodPosition ??= (randomPosition);
+    if (foodPosition == snakePositions[0]) {
+      snakePositions.add(foodPosition!);
+      foodPosition = randomPosition;
+      points++;
+      if (points % 7 == 0) {
+        intervalDuration =
+            Duration(milliseconds: intervalDuration.inMilliseconds - 15);
+        changeSpeed();
+      }
+    }
     while (snakePositions.indexWhere((element) =>
             foodPosition!.dy == element.dy && element.dx == foodPosition!.dx) !=
         -1) {
-      foodPosition = randomPosition;
-    }
-
-    if (foodPosition == snakePositions[0]) {
-      snakePositions.add(foodPosition!);
       foodPosition = randomPosition;
     }
   }
@@ -85,22 +114,45 @@ class _GameBoardState extends State<GameBoard> {
       position: peices[0].position,
       color: Colors.black,
     );
-    return peices;
+    return [...peices];
+  }
+
+  List<Peice> drawBoard() {
+    List<Peice> p = [];
+
+    for (int i = 0; i < (boardWidth / (step)).round(); i++) {
+      for (int j = 0; j < (boardHeight / (step)).round(); j++) {
+        var x = (step * i).toDouble();
+        var y = (step * j).toDouble();
+        p.add(Peice(
+          size: step,
+          position: Offset(x, y),
+          color: (i + j) % 2 == 0
+              ? Colors.yellow.withOpacity(0.5)
+              : Colors.blueGrey.withOpacity(0.5),
+        ));
+      }
+    }
+    return p;
   }
 
   @override
   void initState() {
+    footAnimationCtrl = AnimationController(
+        duration: const Duration(milliseconds: 700), vsync: this);
+    footAnimationCtrl.repeat(reverse: true);
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
       boardWidth = MediaQuery.of(context).size.width;
       boardHeight = boardWidth;
-      lowerBoundX = step;
-      lowerBoundY = step;
-      upperBoundX = getNearestTens(boardWidth.toInt() - step, step);
-      upperBoundY = getNearestTens(boardHeight.toInt() - step, step);
+      lowerBoundX = 0;
+      lowerBoundY = 0;
+      upperBoundX = getNearestTens(boardWidth.toInt(), step);
+      upperBoundY = getNearestTens(boardHeight.toInt(), step);
       setState(() {});
     });
-    restart();
+    // restart();
+    changeSpeed();
   }
 
   void changeSpeed() {
@@ -116,7 +168,10 @@ class _GameBoardState extends State<GameBoard> {
   }
 
   void restart() {
+    intervalDuration = const Duration(milliseconds: 600);
     changeSpeed();
+    snakePositions.clear();
+    points = 0;
   }
 
   @override
@@ -134,11 +189,13 @@ class _GameBoardState extends State<GameBoard> {
                 color: Colors.green,
                 child: Stack(
                   children: [
+                    ...drawBoard(),
                     ...getSnakePeices(),
                     if (food != null) food!,
                   ],
                 ),
               ),
+              Text('$points'),
               ControllerButtons(
                 onPressDown: allowDirection(SnakeDirection.down)
                     ? () => setState(() => snakeDirection = SnakeDirection.down)
@@ -207,88 +264,3 @@ class _GameBoardState extends State<GameBoard> {
 }
 
 enum SnakeDirection { up, down, left, right }
-
-class Peice extends StatelessWidget {
-  final int size;
-  final Color color;
-  final Offset position;
-
-  const Peice(
-      {super.key,
-      required this.size,
-      this.color = Colors.cyan,
-      required this.position});
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      top: position.dx,
-      left: position.dy,
-      child: Container(
-        margin: const EdgeInsets.all(1),
-        height: size - 1,
-        width: size - 1,
-        decoration: BoxDecoration(
-          color: color,
-          border: Border.all(color: Colors.white, width: 1),
-          borderRadius: BorderRadius.circular(size / 4),
-        ),
-      ),
-    );
-  }
-}
-
-class ControllerButtons extends StatelessWidget {
-  final VoidCallback? onPressLeft;
-
-  final VoidCallback? onPressUp;
-
-  final VoidCallback? onPressDown;
-
-  final VoidCallback? onPressRight;
-
-  const ControllerButtons({
-    super.key,
-    this.onPressLeft,
-    this.onPressUp,
-    this.onPressDown,
-    this.onPressRight,
-  });
-
-  Widget getBtn({onPressed, child}) => ElevatedButton(
-        onPressed: onPressed,
-        style: IconButton.styleFrom(
-            shape: const CircleBorder(), padding: const EdgeInsets.all(20)),
-        child: child,
-      );
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        getBtn(
-          onPressed: onPressLeft,
-          child: const Icon(Icons.keyboard_arrow_left),
-        ),
-        Column(
-          children: [
-            getBtn(
-              onPressed: onPressUp,
-              child: const Icon(Icons.keyboard_arrow_up),
-            ),
-            const SizedBox(height: 10),
-            getBtn(
-              onPressed: onPressDown,
-              child: const Icon(Icons.keyboard_arrow_down),
-            ),
-          ],
-        ),
-        getBtn(
-          onPressed: onPressRight,
-          child: const Icon(Icons.keyboard_arrow_right),
-        ),
-      ],
-    );
-  }
-}
